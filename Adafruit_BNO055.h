@@ -25,6 +25,7 @@
 #include "Arduino.h"
 
 #include "utility/imumaths.h"
+#include "utility/quantize.h"
 #include <Adafruit_I2CDevice.h>
 #include <Adafruit_Sensor.h>
 
@@ -78,6 +79,7 @@ typedef enum {
  *  @brief  Class that stores state and functions for interacting with
  *          BNO055 Sensor
  */
+
 class Adafruit_BNO055 : public Adafruit_Sensor {
 public:
   /** BNO055 Registers **/
@@ -295,12 +297,16 @@ public:
                       uint8_t *mag);
 
   imu::Vector<3> getVector(adafruit_vector_type_t vector_type);
+
+  int_fast32_t getCompressedData(adafruit_vector_type_t vector_type);
   imu::Quaternion getQuat();
+  bool readRawQuat(rawQuatReadings_t *readings);
   int8_t getTemp();
 
   /* Adafruit_Sensor implementation */
   bool getEvent(sensors_event_t *);
   bool getEvent(sensors_event_t *, adafruit_vector_type_t);
+  bool getEvent(sensors_event_t *event, adafruit_vector_type_t vec_type, bool requestRaw);
   void getSensor(sensor_t *);
 
   /* Functions to deal with raw calibration data */
@@ -309,7 +315,7 @@ public:
   void setSensorOffsets(const uint8_t *calibData);
   void setSensorOffsets(const adafruit_bno055_offsets_t &offsets_type);
   bool isFullyCalibrated();
-
+  bool getRawData(rawReadings_t *readings, adafruit_vector_type_t vector_type);
   /* Power managments functions */
   void enterSuspendMode();
   void enterNormalMode();

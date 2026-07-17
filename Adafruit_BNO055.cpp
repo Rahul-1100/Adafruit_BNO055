@@ -460,6 +460,89 @@ imu::Vector<3> Adafruit_BNO055::getVector(adafruit_vector_type_t vector_type) {
 }
 
 /*!
+*  @brief  Gets the raw 16-bit sensor readings and the corresponding divisor
+*  @param  readings
+*          Pointer to rawReadings_t struct to be filled
+*  @param  vector_type
+*          The type of vector data to retrieve
+*  @return true if read is successful
+*/
+bool Adafruit_BNO055::getRawData(rawReadings_t *readings, adafruit_vector_type_t vector_type) {
+  if (readings == NULL) {
+    return false;
+  }
+
+  uint8_t buffer[6];
+  memset(buffer, 0, 6);
+
+  /* Read vector data (6 bytes) from the sensor */
+  if (!readLen((adafruit_bno055_reg_t)vector_type, buffer, 6)) {
+    return false;
+  }
+
+  /* Combine bytes into signed 16-bit integers (Little Endian) */
+  readings->x = ((int16_t)buffer[0]) | (((int16_t)buffer[1]) << 8);
+  readings->y = ((int16_t)buffer[2]) | (((int16_t)buffer[3]) << 8);
+  readings->z = ((int16_t)buffer[4]) | (((int16_t)buffer[5]) << 8);
+
+  /* Assign the divisor based on the vector type as seen in getVector() */
+  switch (vector_type) {
+    case VECTOR_MAGNETOMETER:
+    case VECTOR_GYROSCOPE:
+    case VECTOR_EULER:
+      readings->divisor = 16;
+      break;
+    case VECTOR_ACCELEROMETER:
+    case VECTOR_LINEARACCEL:
+    case VECTOR_GRAVITY:
+      readings->divisor = 100;
+      break;
+    default:
+      readings->divisor = 1; // Default fallback
+      break;
+  }
+
+  return true;
+}
+
+
+/*!
+*  @brief  Gets the raw 16-bit quaternion readings and the corresponding divisor
+*  @param  readings
+*          Pointer to rawQuatReadings_t struct to be filled
+*  @return true if read is successful
+*/
+bool Adafruit_BNO055::readRawQuat(rawQuatReadings_t *readings) {
+  if (readings == NULL) {
+    return false;
+  }
+
+  uint8_t buffer[8];
+  memset(buffer, 0, 8);
+
+  /* Read quat data (8 bytes) from the sensor */
+  /* BNO055_QUATERNION_DATA_W_LSB_ADDR is the starting register */
+  if (!readLen(BNO055_QUATERNION_DATA_W_LSB_ADDR, buffer, 8)) {
+    return false;
+  }
+
+  /* Combine bytes into signed 16-bit integers (Little Endian) */
+  /* W is the first 2 bytes, then X, Y, Z */
+  readings->w = ((int16_t)buffer[0]) | (((int16_t)buffer[1]) << 8);
+  readings->x = ((int16_t)buffer[2]) | (((int16_t)buffer[3]) << 8);
+  readings->y = ((int16_t)buffer[4]) | (((int16_t)buffer[5]) << 8);
+  readings->z = ((int16_t)buffer[6]) | (((int16_t)buffer[7]) << 8);
+
+  /* 
+   * The BNO055 Quaternion data is scaled by 2^14.
+   * 1 / (1 << 14) = 1 / 16384.
+   */
+  readings->divisor = 16384;
+
+  return true;
+}
+
+/*!
  *  @brief  Gets a quaternion reading from the specified source
  *  @return quaternion reading
  */
@@ -597,6 +680,45 @@ bool Adafruit_BNO055::getEvent(sensors_event_t *event,
   }
 
   return true;
+}
+/*!
+*  @brief  Reads the sensor and returns the raw data as a sensors_event_t
+*  @param  event
+*          Event description
+*  @param  vec_type
+*          specify the type of reading (e.g., VECTOR_ACCELEROMETER)
+*  @return true if successful
+*/
+bool Adafruit_BNO055::getEvent(sensors_event_t *event, adafruit_vector_type_t vec_type, bool requestRaw) {
+  /* Clear the event */
+  memset(event, 0, sizeof(sensors_event_t));
+
+  event->version = sizeof(sensors_event_t);
+  event->sensor_id = _sensorID;
+  event->timestamp = millis();
+
+  if (requestRaw) {
+    /* 
+     * Populate the 'raw' union member. 
+     * We pass the address of the raw union member directly to getRawData.
+     */
+    if (!getRawData(&event->raw, vec_type)) {
+      return false;
+    }
+
+    /* Set the event type so the user knows which sensor the raw data belongs to */
+    if (vec_type == Adafruit_BNO055::VECTOR_LINEARACCEL) event->type = SENSOR_TYPE_LINEAR_ACCELERATION;
+    else if (vec_type == Adafruit_BNO055::VECTOR_ACCELEROMETER) event->type = SENSOR_TYPE_ACCELEROMETER;
+    else if (vec_type == Adafruit_BNO055::VECTOR_GRAVITY) event->type = SENSOR_TYPE_GRAVITY;
+    else if (vec_type == Adafruit_BNO055::VECTOR_EULER) event->type = SENSOR_TYPE_ORIENTATION;
+    else if (vec_type == Adafruit_BNO055::VECTOR_GYROSCOPE) event->type = SENSOR_TYPE_GYROSCOPE;
+    else if (vec_type == Adafruit_BNO055::VECTOR_MAGNETOMETER) event->type = SENSOR_TYPE_MAGNETIC_FIELD;
+    
+    return true;
+  } else {
+    /* Fallback to standard processed float event */
+    return getEvent(event, vec_type); 
+  }
 }
 
 /*!
